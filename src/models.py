@@ -98,51 +98,10 @@ class Folder(Struct):
     conditions: list = field(default_factory=list)
     """智能文件夹的筛选条件列表。"""
 
-    subdirs: "dict[str,Folder]" = field(default_factory=dict)
-    """子文件夹弱引用字典，用于快速查找子文件夹。"""
-
-    subfiles: "dict[str,File]" = field(default_factory=dict)
-    """子文件弱引用字典，用于快速查找子文件。"""
-
     # password: str
     # passwordTips: str
     # iconColor: str = ""
 
-    def __post_init__(self) -> None:
-        """初始化后处理，建立子文件夹的弱引用映射。"""
-        for child_dir in self.children_:
-            self.subdirs[child_dir.name] = child_dir
-
-    def find(self, path: list[Stem]) -> "Folder|File|None":
-        """根据路径查找子项。
-
-        Args:
-            path: 路径段列表，如 ["文件夹1", "子文件夹2"]。
-
-        Returns:
-            找到的 Folder 或 File 对象，未找到则返回 None。
-        """
-        if not path:
-            return None
-
-        subdir, *rest = path
-
-        # 首先在子文件中查找
-        if subdir in self.subfiles:
-            if not rest:  # 没有剩余路径，返回文件
-                return self.subfiles[subdir]
-            # 文件不能有子路径
-            return None
-
-        # 然后在子文件夹中查找
-        if subdir in self.subdirs:
-            folder = self.subdirs[subdir]
-            if not rest:  # 没有剩余路径，返回文件夹
-                return folder
-            # 继续在子文件夹中查找
-            return folder.find(rest)
-
-        return None
 
 
 class TagGroup(Struct, frozen=True):
@@ -205,30 +164,6 @@ class Meta(Struct):
 
     applicationVersion: str
     """Eagle 应用版本号。"""
-
-    _subdirs: "dict[Stem,Folder]" = field(default_factory=dict)
-    """顶层文件夹的弱引用字典，用于快速查找。"""
-
-    def __post_init__(self) -> None:
-        """初始化后处理，建立顶层文件夹的弱引用映射。"""
-        for folder in self.folders:
-            self._subdirs[folder.name] = folder
-
-    def find(self, path: str) -> "Folder|File|None":
-        """根据路径查找文件夹或文件。
-
-        Args:
-            path: 以 "/" 分隔的路径字符串，如 "设计素材/图标"。
-
-        Returns:
-            找到的 Folder 或 File 对象，未找到则返回 None。
-        """
-        first, *rest = path.removesuffix("/").split("/")
-        if first not in self._subdirs:
-            return None
-        if not rest:
-            return self._subdirs[first]
-        return self._subdirs[first].find(rest)
 
 
 class Palette(Struct, frozen=True):

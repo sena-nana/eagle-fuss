@@ -212,7 +212,7 @@ class _EagleLibrarySource:
         folder = self.path_dir_map.get(parent_path)
         if not folder:
             return None
-        return folder.subfiles.get(path_.name)
+        return self.dir_file_map.get(folder.id, {}).get(path_.name)
 
     def get_folder(self, path: str) -> Folder | None:
         """根据 FUSE 路径获取文件夹对象。
