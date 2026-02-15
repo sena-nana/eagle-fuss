@@ -97,6 +97,8 @@ class _EagleLibrarySource:
         """从文件夹ID到文件对象列表的映射"""
         self.path_dir_map: dict[Path, Folder] = {}
         """从路径到文件夹对象的映射"""
+        self._last_check_time = 0
+        """上次检查增量更新的时间戳（毫秒），用于1秒节流"""
 
         # 支持的图片格式（用于生成缩略图）
         self.image_extensions = {
@@ -168,30 +170,67 @@ class _EagleLibrarySource:
         """增量更新缓存。
 
         根据 mtime.json 中的时间戳，仅更新发生变化的素材。
+        同时检查 metadata.json 的修改时间，处理文件夹结构变化。
+
         处理以下情况：
             - 素材被删除：从映射中移除。
             - 素材所属文件夹变更：更新文件夹映射。
             - 素材内容变更：更新文件对象。
+            - 文件夹结构变化：重新加载文件夹映射。
         """
-        mtime = json.decode(
-            (self.src / "mtime.json").read_text(encoding="utf-8"), type=dict[str, int]
-        )
+        # 检查文件夹结构变化
+        metadata_path = self.src / "metadata.json"
+        if metadata_path.exists():
+            meta = json.decode(metadata_path.read_text(encoding="utf-8"), type=Meta)
+            if meta.modificationTime > self.meta.modificationTime:
+                # 文件夹结构发生变化，需要重新初始化缓存
+                self._init_cache()
+                return
+
+        # 检查文件变化
+        mtime_path = self.src / "mtime.json"
+        if not mtime_path.exists():
+            self.update_time = now()
+            return
+
+        mtime = json.decode(mtime_path.read_text(encoding="utf-8"), type=dict[str, int])
         for k, v in mtime.items():
             if v > self.update_time:
                 new_file = self._load_file(k)
                 if new_file.isDeleted:
-                    self.dir_file_map.get(new_file.folders[0], {}).pop(self.id_map[k].name)
+                    # 修复：检查folders列表是否为空
+                    if new_file.folders:
+                        self.dir_file_map.get(new_file.folders[0], {}).pop(
+                            self.id_map[k].name, None
+                        )
+                    else:
+                        self.dir_file_map.get(self.void_folder.id, {}).pop(
+                            self.id_map[k].name, None
+                        )
                     del self.id_map[k]
                     continue
                 if new_file.folders != self.id_map[k].folders:
                     # 文件夹变更，更新映射
                     old_folders = self.id_map[k].folders
                     for old_folder in old_folders:
-                        self.dir_file_map.get(old_folder, {}).pop(self.id_map[k].name)
+                        self.dir_file_map.get(old_folder, {}).pop(self.id_map[k].name, None)
                     for new_folder in new_file.folders:
                         self.dir_file_map.setdefault(new_folder, {})[new_file.name] = new_file
                 self.id_map[k] = new_file
         self.update_time = now()
+
+    def check_and_update_cache(self) -> None:
+        """检查并更新缓存（带1秒节流）。
+
+        如果距离上次检查超过1秒，则执行增量更新。
+        否则跳过检查。
+        """
+        current_time = now()
+        if current_time - self._last_check_time < 1000:  # 1秒
+            return
+
+        self._update_cache()
+        self._last_check_time = current_time
 
     def get_file(self, path: str) -> File | None:
         """根据 FUSE 路径获取文件对象。
@@ -880,6 +919,9 @@ class EagleLibrary(Operations, LoggingMixIn):
         Returns:
             文件句柄。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         self.src.create_file(path, mode)
         return 0
 
@@ -926,6 +968,8 @@ class EagleLibrary(Operations, LoggingMixIn):
         Raises:
             FuseOSError: 文件/目录不存在时抛出 ENOENT。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
 
         # 检查是否为目录
         folder = self.src.get_folder(path)
@@ -1004,6 +1048,9 @@ class EagleLibrary(Operations, LoggingMixIn):
             2. 添加子文件夹名称。
             3. 添加该文件夹下的素材名称。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         entries = [".", ".."]
         folder = self.src.get_folder(path)
         if folder is None:
@@ -1041,6 +1088,9 @@ class EagleLibrary(Operations, LoggingMixIn):
         Returns:
             读取的数据字节。如果文件不存在则返回空字节。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         # 获取文件对象
         file_obj = self.src.get_file(path)
         if file_obj is None:
@@ -1098,6 +1148,9 @@ class EagleLibrary(Operations, LoggingMixIn):
         Returns:
             实际写入的字节数。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         file_obj = self.src.get_file(path)
         if file_obj is None:
             # 文件不存在，先创建
@@ -1114,6 +1167,9 @@ class EagleLibrary(Operations, LoggingMixIn):
             path: 新目录路径。
             mode: 目录权限模式。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         self.src.create_folder(path)
 
     @override
@@ -1125,6 +1181,9 @@ class EagleLibrary(Operations, LoggingMixIn):
         Args:
             path: 目录路径。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         self.src.delete_folder(path)
 
     @override
@@ -1137,6 +1196,9 @@ class EagleLibrary(Operations, LoggingMixIn):
             old: 原路径。
             new: 新路径。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         # 判断是文件还是目录
         if self.src.get_file(old):
             self.src.rename_file(old, new)
@@ -1154,6 +1216,9 @@ class EagleLibrary(Operations, LoggingMixIn):
             length: 目标长度。
             fh: 文件句柄（可选）。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         file_obj = self.src.get_file(path)
         if file_obj is None:
             raise FuseOSError(ENOENT)
@@ -1168,6 +1233,9 @@ class EagleLibrary(Operations, LoggingMixIn):
         Args:
             path: 文件路径。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         self.src.delete_file(path)
 
     @override
@@ -1183,5 +1251,8 @@ class EagleLibrary(Operations, LoggingMixIn):
         Returns:
             0 表示成功。
         """
+        # 检查增量更新
+        self.src.check_and_update_cache()
+
         self.src.update_file_time(path, times)
         return 0
