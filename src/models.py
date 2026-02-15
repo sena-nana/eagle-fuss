@@ -1,12 +1,3 @@
-"""Eagle 素材库数据模型模块。
-
-本模块定义了 Eagle 素材库中使用的各种数据结构，
-包括文件夹、素材、标签组、调色板等核心模型。
-
-这些模型使用 msgspec.Struct 实现，具有高性能的序列化/反序列化能力，
-并支持冻结（frozen）以确保数据不可变性。
-"""
-
 from msgspec import Struct, field
 
 from src.type import ID, Stem  # noqa: TC001
@@ -101,7 +92,6 @@ class Folder(Struct):
     # password: str
     # passwordTips: str
     # iconColor: str = ""
-
 
 
 class TagGroup(Struct, frozen=True):

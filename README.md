@@ -54,24 +54,61 @@ python main.py
 
 ## 项目结构
 
+### 模块化设计
+项目采用模块化设计，将不同功能拆分到独立的模块中，提高代码的可维护性和可读性。
+
 ```
 src/
-├── fs.py              # 核心FUSE文件系统实现
+├── __init__.py        # 包导出，保持向后兼容性
+├── core.py            # 核心工具函数和常量定义
+├── source.py          # 数据源层（EagleLibrarySource类）
+├── fuse_operations.py # FUSE操作层（EagleLibrary类）
 ├── models.py          # 数据模型定义
 └── type.py            # 类型别名定义
 ```
 
+### 模块职责
+
+1. **`src/core.py`** - 核心工具模块
+   - `now()`函数：获取当前时间的毫秒时间戳
+   - `IMAGE_EXTENSIONS`常量：支持的图片格式集合
+   - 其他通用工具函数和常量
+
+2. **`src/source.py`** - 数据源层模块
+   - `EagleLibrarySource`类（原`_EagleLibrarySource`，现改为公共类）
+   - 与Eagle素材库交互的所有逻辑
+   - 缓存管理和增量更新检查机制
+   - 文件和文件夹操作方法
+
+3. **`src/fuse_operations.py`** - FUSE操作层模块
+   - `EagleLibrary`类：实现FUSE Operations接口
+   - 所有FUSE文件系统操作方法
+   - 在每个操作前调用增量更新检查
+
+4. **`src/models.py`** - 数据模型模块
+   - `File`、`Folder`、`Meta`等数据模型定义
+   - 使用`msgspec.Struct`实现高性能序列化
+
+5. **`src/type.py`** - 类型定义模块
+   - `ID`、`Stem`等类型别名定义
+   - 提高代码类型安全性和可读性
+
+6. **`src/__init__.py`** - 包导出模块
+   - 重新导出主要类和函数
+   - 保持向后兼容性（导出`_EagleLibrarySource`作为`EagleLibrarySource`的别名）
+
 ## 核心组件
 
-### `_EagleLibrarySource`类
+### `EagleLibrarySource`类（原`_EagleLibrarySource`）
 - 数据源层，负责与Eagle素材库交互
 - 维护缓存映射关系（id_map, dir_map, dir_file_map, path_dir_map）
-- 实现增量更新检查逻辑
+- 实现增量更新检查逻辑（1秒节流）
+- 处理文件和文件夹变化检测
 
 ### `EagleLibrary`类
 - FUSE层，实现FUSE Operations接口
 - 将文件系统操作转换为对Eagle素材库的操作
-- 在每个操作前调用增量更新检查
+- 在每个操作前调用`self.src._check_and_update_cache()`进行增量更新检查
 
 ## 技术细节
 

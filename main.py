@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fuse import FUSE
 
-from src.fs import EagleLibrary
+from src import EagleLibrary
 
 
 def main() -> None:
