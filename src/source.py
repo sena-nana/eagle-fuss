@@ -73,6 +73,15 @@ class EagleLibrarySource:
 
         self._init_cache()
 
+    def get_source_path(self, file: File):
+        return self.src / "images" / (file.id + ".info") / f"{file.name}.{file.ext}"
+
+    def get_source_meta(self, file_id: "ID"):
+        return self.src / "images" / (file_id + ".info") / "metadata.json"
+
+    def get_source_thumb(self, file: File):
+        return self.src / "images" / (file.id + ".info") / f"{file.name}_thumbnail.png"
+
     def _init_cache(self) -> None:
         """初始化缓存，建立所有映射关系。
 
@@ -112,9 +121,11 @@ class EagleLibrarySource:
             self.id_map[image_meta.id] = image_meta
             if image_meta.folders:
                 for folder_id in image_meta.folders:
-                    self.dir_file_map.setdefault(folder_id, {})[image_meta.name] = image_meta
+                    self.dir_file_map.setdefault(folder_id, {})[image_meta.fullname] = image_meta
             else:
-                self.dir_file_map.setdefault(self.void_folder.id, {})[image_meta.name] = image_meta
+                self.dir_file_map.setdefault(self.void_folder.id, {})[image_meta.fullname] = (
+                    image_meta
+                )
         self.update_time = now()
 
     def _update_cache(self) -> None:
@@ -152,11 +163,11 @@ class EagleLibrarySource:
                     # 修复：检查folders列表是否为空
                     if new_file.folders:
                         self.dir_file_map.get(new_file.folders[0], {}).pop(
-                            self.id_map[k].name, None
+                            self.id_map[k].fullname, None
                         )
                     else:
                         self.dir_file_map.get(self.void_folder.id, {}).pop(
-                            self.id_map[k].name, None
+                            self.id_map[k].fullname, None
                         )
                     del self.id_map[k]
                     continue
@@ -164,9 +175,9 @@ class EagleLibrarySource:
                     # 文件夹变更，更新映射
                     old_folders = self.id_map[k].folders
                     for old_folder in old_folders:
-                        self.dir_file_map.get(old_folder, {}).pop(self.id_map[k].name, None)
+                        self.dir_file_map.get(old_folder, {}).pop(self.id_map[k].fullname, None)
                     for new_folder in new_file.folders:
-                        self.dir_file_map.setdefault(new_folder, {})[new_file.name] = new_file
+                        self.dir_file_map.setdefault(new_folder, {})[new_file.fullname] = new_file
                 self.id_map[k] = new_file
         self.update_time = now()
 
@@ -225,7 +236,8 @@ class EagleLibrarySource:
             解析后的 File 对象。
         """
         return json.decode(
-            (self.src / "images" / file_id / "metadata.json").read_text(encoding="utf-8"), type=File
+            self.get_source_meta(file_id).read_text(encoding="utf-8"),
+            type=File,
         )
 
     # ==================== 辅助方法：ID 生成与元数据保存 ====================
@@ -251,9 +263,9 @@ class EagleLibrarySource:
         Args:
             file: 要保存的文件对象。
         """
-        file_dir = self.src / "images" / file.id
-        file_dir.mkdir(parents=True, exist_ok=True)
-        (file_dir / "metadata.json").write_bytes(json.encode(file))
+        meta_dir = self.get_source_meta(file.id)
+        meta_dir.parent.mkdir(parents=True, exist_ok=True)
+        meta_dir.write_bytes(json.encode(file))
 
     def _update_mtime(self, file_id: "ID") -> None:
         """更新素材的修改时间戳。
@@ -291,7 +303,7 @@ class EagleLibrarySource:
         Returns:
             创建的目录路径。
         """
-        dir_path = self.src / "images" / file_id
+        dir_path = self.get_source_path(self.id_map[file_id]).parent
         dir_path.mkdir(parents=True, exist_ok=True)
         return dir_path
 
@@ -308,9 +320,9 @@ class EagleLibrarySource:
         self.id_map[file.id] = file
         if file.folders:
             for folder_id in file.folders:
-                self.dir_file_map.setdefault(folder_id, {})[file.name] = file
+                self.dir_file_map.setdefault(folder_id, {})[file.fullname] = file
         else:
-            self.dir_file_map.setdefault(self.void_folder.id, {})[file.name] = file
+            self.dir_file_map.setdefault(self.void_folder.id, {})[file.fullname] = file
 
     def remove_file_from_cache(self, file_id: "ID") -> None:
         """从缓存映射中移除文件。
@@ -327,9 +339,9 @@ class EagleLibrarySource:
         if file.folders:
             for folder_id in file.folders:
                 if folder_id in self.dir_file_map:
-                    self.dir_file_map[folder_id].pop(file.name, None)
+                    self.dir_file_map[folder_id].pop(file.fullname, None)
         else:
-            self.dir_file_map.get(self.void_folder.id, {}).pop(file.name, None)
+            self.dir_file_map.get(self.void_folder.id, {}).pop(file.fullname, None)
         # 从 id_map 中移除
         del self.id_map[file_id]
 
@@ -381,8 +393,8 @@ class EagleLibrarySource:
 
         try:
             # 构建源文件路径和缩略图路径
-            source_path = self.src / "images" / file_id / f"{file_name}.{file_ext}"
-            thumbnail_path = self.src / "images" / file_id / f"{file_name}_thumbnail.png"
+            source_path = self.get_source_path(self.id_map[file_id])
+            thumbnail_path = self.get_source_thumb(self.id_map[file_id])
 
             # 打开图片并生成缩略图
             with Image.open(source_path) as img:
@@ -459,8 +471,7 @@ class EagleLibrarySource:
         # 如果是图片格式，生成缩略图
         if file_ext.lower() in self.image_extensions:
             # 创建空文件以便生成缩略图（实际内容将在 write_file 中写入）
-            file_path = self.src / "images" / new_id / f"{file_name}.{file_ext}"
-            file_path.touch()
+            self.get_source_path(new_file).touch()
             # 尝试生成缩略图（如果文件有内容）
             self._generate_thumbnail(new_id, file_name, file_ext)
 
@@ -481,10 +492,10 @@ class EagleLibrarySource:
             return 0
 
         file = self.id_map[file_id]
-        file_path = self.src / "images" / file_id / f"{file.name}.{file.ext}"
+        file_path = self.get_source_path(file)
 
         # 写入数据
-        with Path(file_path).open("r+b" if file_path.exists() else "wb") as f:
+        with file_path.open("r+b" if file_path.exists() else "wb") as f:
             f.seek(offset)
             written = f.write(data)
 
@@ -551,16 +562,16 @@ class EagleLibrarySource:
         new_folder_ids = [new_parent.id] if new_parent and new_parent.id != "null" else []
 
         # 重命名实际文件
-        old_file_path = self.src / "images" / file.id / f"{file.name}.{file.ext}"
-        new_file_path = self.src / "images" / file.id / f"{new_name}.{new_ext}"
+        old_file_path = self.get_source_path(file)
         if old_file_path.exists():
-            old_file_path.rename(new_file_path)
+            old_file_path.rename(old_file_path.with_stem(new_name).with_suffix(f".{new_ext}"))
 
         # 重命名缩略图（如果存在）
-        old_thumb_path = self.src / "images" / file.id / f"{file.name}_thumbnail.png"
-        new_thumb_path = self.src / "images" / file.id / f"{new_name}_thumbnail.png"
+        old_thumb_path = self.get_source_thumb(file)
         if old_thumb_path.exists():
-            old_thumb_path.rename(new_thumb_path)
+            old_thumb_path.rename(
+                old_thumb_path.with_stem(new_name + "_thumbnail").with_suffix(f".{new_ext}")
+            )
 
         # 从旧缓存位置移除
         self.remove_file_from_cache(file.id)
@@ -613,7 +624,7 @@ class EagleLibrarySource:
             return
 
         file = self.id_map[file_id]
-        file_path = self.src / "images" / file_id / f"{file.name}.{file.ext}"
+        file_path = self.get_source_path(file)
 
         # 截断文件
         with Path(file_path).open("r+b" if file_path.exists() else "wb") as f:

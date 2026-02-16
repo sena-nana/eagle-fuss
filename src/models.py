@@ -170,7 +170,7 @@ class Palette(Struct, frozen=True):
     color: list[int]
     """RGB 颜色值列表，如 [250, 248, 249]。"""
 
-    ratio: int
+    ratio: float
     """该颜色在图片中的占比百分比。"""
 
 
@@ -250,3 +250,7 @@ class File(Struct):
 
     palettes: list[Palette]
     """调色板颜色列表。"""
+
+    @property
+    def fullname(self) -> str:
+        return f"{self.name}.{self.ext}"

@@ -19,7 +19,7 @@ def main() -> None:
     for path in paths:
         logging.info(f"Mounting {path}")
         target = Path.cwd() / path.stem.removesuffix(".library")
-        _ = FUSE(EagleLibrary(path, target), target, foreground=True, nothreads=True)
+        _ = FUSE(EagleLibrary(path, target), str(target), foreground=True, nothreads=True)
     input("Press Enter to exit...")
 
 

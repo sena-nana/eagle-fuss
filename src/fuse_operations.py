@@ -264,7 +264,7 @@ class EagleLibrary(Operations, LoggingMixIn):
             return b""
 
         # 构建实际文件路径：images/{id}/{name}.{ext}
-        file_path = self.src.src / "images" / file_obj.id / f"{file_obj.name}.{file_obj.ext}"
+        file_path = self.src.get_source_path(file_obj)
 
         # 读取文件内容
         if not file_path.exists():
