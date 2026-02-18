@@ -8,6 +8,7 @@ dependencies = [
     "msgspec>=0.19.0",
     "pillow>=12.1.1",
     "pyfuse3>=3.4.2",
+    "xxhash>=3.6.0",
 ]
 
 [tool.ruff]

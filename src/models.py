@@ -1,4 +1,6 @@
 from msgspec import Struct, field
+from pyfuse3 import InodeT
+from xxhash import xxh3_64_intdigest
 
 from src.type import ID, Stem  # noqa: TC001
 
@@ -83,11 +85,20 @@ class Folder(Struct):
     tags: list[str] = field(default_factory=list)
     """文件夹标签列表。"""
 
-    children_: "list[Folder]" = field(name="children", default_factory=list)
+    children: "list[Folder]" = field(default_factory=list)
     """子文件夹列表（从 JSON 的 "children" 字段映射）。"""
 
     conditions: list = field(default_factory=list)
     """智能文件夹的筛选条件列表。"""
+
+    inode_id: InodeT = InodeT(0)
+
+    def __post_init__(self):
+        self.inode_id = InodeT(xxh3_64_intdigest(self.id))
+
+    @property
+    def fullname(self):
+        return self.name
 
     # password: str
     # passwordTips: str
@@ -239,17 +250,21 @@ class File(Struct):
     modificationTime: int
     """元数据最后修改时间（毫秒时间戳）。"""
 
-    height: int
-    """图片高度（像素）。"""
-
-    width: int
-    """图片宽度（像素）。"""
-
     lastModified: int
     """最后修改时间（毫秒时间戳）。"""
 
-    palettes: list[Palette]
+    palettes: list[Palette] = field(default_factory=list)
     """调色板颜色列表。"""
+    height: int = 0
+    """图片高度（像素）。"""
+
+    width: int = 0
+    """图片宽度（像素）。"""
+
+    inode_id: InodeT = InodeT(0)
+
+    def __post_init__(self):
+        self.inode_id = InodeT(xxh3_64_intdigest(self.id))
 
     @property
     def fullname(self) -> str:

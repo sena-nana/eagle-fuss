@@ -1,26 +1,34 @@
 import logging
 from pathlib import Path
 
-from fuse import FUSE
+from pyfuse3 import close, default_options, init, main
+from trio import run
 
 from src import EagleLibrary
 
+logging.basicConfig(level=logging.INFO)
 
-def main() -> None:
-    """主入口函数。
 
-    自动查找当前目录下所有 .library 目录，
-    并将它们挂载为同名目录（去除 .library 后缀）。
-
-    Example:
-        当前目录有 test.library/，则挂载到 test/。
-    """
+def test() -> None:
     paths = [dir for dir in Path.cwd().iterdir() if dir.is_dir() and dir.suffix == ".library"]
     for path in paths:
-        logging.info(f"Mounting {path}")
-        target = Path.cwd() / path.stem.removesuffix(".library")
-        _ = FUSE(EagleLibrary(path, target), str(target), foreground=True, nothreads=True)
-    input("Press Enter to exit...")
+        try:
+            logging.info(f"挂载 {path}")
+            lib = EagleLibrary(path)
+            target = Path.cwd() / path.stem
+            target.mkdir(exist_ok=True)
+            options = set(default_options)
+            options.add("fsname=" + path.stem)
+            init(lib, str(target), options)
+            break
+        except Exception as e:
+            logging.error(e)
+            continue
+    try:
+        run(main)
+    except Exception as e:
+        close(unmount=True)
+        raise e
 
 
-main()
+test()
