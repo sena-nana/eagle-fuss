@@ -1,8 +1,6 @@
 from msgspec import Struct, field
-from pyfuse3 import InodeT
-from xxhash import xxh3_64_intdigest
 
-from src.type import ID, Stem  # noqa: TC001
+from .type import ID, Stem  # noqa: TC001
 
 
 class Rule(Struct, frozen=True):
@@ -90,11 +88,6 @@ class Folder(Struct):
 
     conditions: list = field(default_factory=list)
     """智能文件夹的筛选条件列表。"""
-
-    inode_id: InodeT = InodeT(0)
-
-    def __post_init__(self):
-        self.inode_id = InodeT(xxh3_64_intdigest(self.id))
 
     @property
     def fullname(self):
@@ -235,7 +228,7 @@ class File(Struct):
     tags: list[str]
     """标签列表。"""
 
-    folders: list[str]
+    folders: list[ID]
     """所属文件夹 ID 列表。"""
 
     isDeleted: bool
@@ -260,11 +253,6 @@ class File(Struct):
 
     width: int = 0
     """图片宽度（像素）。"""
-
-    inode_id: InodeT = InodeT(0)
-
-    def __post_init__(self):
-        self.inode_id = InodeT(xxh3_64_intdigest(self.id))
 
     @property
     def fullname(self) -> str:

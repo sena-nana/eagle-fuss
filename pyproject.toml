@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "msgspec>=0.19.0",
     "pillow>=12.1.1",
-    "pyfuse3>=3.4.2",
+    "wsgidav>=4.3.3",
     "xxhash>=3.6.0",
 ]
 
