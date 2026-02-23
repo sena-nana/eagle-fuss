@@ -196,7 +196,6 @@ class EagleLibrarySource:
             return True
         if _id in self.folder_id_map:
             subfolder = self.folder_id_map.pop(_id)
-            void = self.folder_id_map[VOID_ID]
 
             def clear_images(folder: FolderSource):
                 for image in folder.files.values():
@@ -204,12 +203,11 @@ class EagleLibrarySource:
                     image.meta.folders.remove(folder.meta.id)
                     image.targets.remove(target)
                     self.path_to_id.pop(target)
-                    image.save_meta()
                     if not image.meta.folders:
-                        void.add_file(image)
-                        new_path = void.target / image.meta.fullname
-                        image.targets.add(new_path)
-                        self.path_to_id[new_path] = image.meta.id
+                        self.file_id_map.pop(image.meta.id)
+                        image.delete()
+                    else:
+                        image.save_meta()
 
                 for subfolder in folder.subfolders.values():
                     clear_images(subfolder)
