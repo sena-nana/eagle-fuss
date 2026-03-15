@@ -47,14 +47,21 @@ class EagleLibrarySource:
         """元数据信息"""
         # region 初始化文件
         self._init_subfolder(root)
+        void = self.folder_id_map[VOID_ID]  # 重新绑定到已注册的实例，与 folder_id_map 保持一致
 
         def _init_image(parent: FolderSource, image: ImageSource):
-            if not parent.add_file(image):
-                logging.warning(f"文件 {image.meta.fullname} 已存在，但重复添加")
-                return
+            name = image.meta.fullname
+            if name in parent.files or name in parent.subfolders:
+                stem, ext = image.meta.name, image.meta.ext
+                counter = 2
+                while name in parent.files or name in parent.subfolders:
+                    name = f"{stem} ({counter}).{ext}"
+                    counter += 1
+            parent.files[name] = image
             self.file_id_map[image.meta.id] = image
-            for target in image.targets:
-                self.path_to_id[target] = image.meta.id
+            target = parent.target / name
+            image.targets.add(target)
+            self.path_to_id[target] = image.meta.id
 
         # 建立文件和ID的映射
         for dir in (self.src.path / "images").iterdir():
@@ -102,13 +109,14 @@ class EagleLibrarySource:
 
         meta = self.src.read_meta()
         all_folders = set(self.folder_id_map.keys())
-        all_folders.remove(VOID_ID)
+        all_folders.discard(VOID_ID)
+        all_folders.discard(ROOT_ID)
 
         def _check_folder(folder: "Folder", parent: FolderSource):
             all_folders.discard(folder.id)
             if folder.modificationTime > self._last_check_time:
                 new = parent / folder
-                if folder_id in self.folder_id_map:
+                if folder.id in self.folder_id_map:
                     new.files.update(self.folder_id_map[folder.id].files)
                 self._init_subfolder(new, loop=False)
             else:
@@ -133,7 +141,7 @@ class EagleLibrarySource:
                     old_file = self.file_id_map.pop(k)
                     # 先从目录中删除
                     for folder in old_file.meta.folders:
-                        if old_file.meta.fullname in self.folder_id_map[folder].files:
+                        if folder in self.folder_id_map and old_file.meta.fullname in self.folder_id_map[folder].files:
                             self.folder_id_map[folder].files.pop(old_file.meta.fullname)
                 # 更新文件映射
                 new_file = self.src.image(k)
@@ -149,10 +157,10 @@ class EagleLibrarySource:
     def new_file(self, path: "Path", data: bytes) -> bool:
         if path in self.path_to_id:
             return False
-        folder, name, ext = path.parent, path.name, path.suffix
+        folder = path.parent
         if folder not in self.path_to_id:
             return False
-        if (image := self.folder_id_map[self.path_to_id[folder]].new_file(data, name, ext)) is None:
+        if (image := self.folder_id_map[self.path_to_id[folder]].new_file(data, path.stem, path.suffix.lstrip("."))) is None:
             return False
         self.file_id_map[image.meta.id] = image
         self.path_to_id[path] = image.meta.id
@@ -174,11 +182,14 @@ class EagleLibrarySource:
         parent, name = path.parent, path.name
         if parent not in self.path_to_id:
             return False
-        parent_folder = self.folder_id_map[self.path_to_id[parent]]
+        parent_id = self.path_to_id[parent]
+        parent_folder = self.folder_id_map[parent_id]
         if not (subfolder := parent_folder.new_subfolder(name)):
             return False
         self.folder_id_map[subfolder.meta.id] = subfolder
         self.path_to_id[path] = subfolder.meta.id
+        if parent_id == ROOT_ID:
+            self.src.meta.folders.append(subfolder.meta)
         self.src.save_meta()
         return True
 
@@ -220,6 +231,28 @@ class EagleLibrarySource:
             return True
         return False
 
+    def _repath_folder(self, folder: "FolderSource", new_target: "Path") -> None:
+        """递归更新文件夹及其所有子项在 path_to_id 和 targets 中的路径（原地修改）。"""
+        old_target = folder.target
+
+        # 更新本文件夹下所有文件的路径
+        for image in folder.files.values():
+            old_t = old_target / image.meta.fullname
+            new_t = new_target / image.meta.fullname
+            image.targets.discard(old_t)
+            image.targets.add(new_t)
+            self.path_to_id.pop(old_t, None)
+            self.path_to_id[new_t] = image.meta.id
+
+        # 原地更新文件夹自身的 target（old_target 可能已被调用方提前移除）
+        self.path_to_id.pop(old_target, None)
+        folder.target = new_target
+        self.path_to_id[new_target] = folder.meta.id
+
+        # 递归处理子文件夹
+        for child_name, child_folder in folder.subfolders.items():
+            self._repath_folder(child_folder, new_target / child_name)
+
     def rename_node(self, old_path: "Path", new_path: "Path") -> bool:
         """重命名或移动素材。"""
         if old_path not in self.path_to_id or new_path in self.path_to_id:
@@ -236,7 +269,7 @@ class EagleLibrarySource:
         if file_id in self.file_id_map:
             image = self.file_id_map[file_id]
             image.meta.name = new_path.stem
-            image.meta.ext = new_path.suffix
+            image.meta.ext = new_path.suffix.lstrip(".")
             image.save_meta()
             image.targets.remove(old_path)
             image.targets.add(new_path)
@@ -248,6 +281,7 @@ class EagleLibrarySource:
             folder = self.folder_id_map[file_id]
             folder.meta.name = new_path.name
             _old_parent.subfolders.pop(old_path.name)
+            self._repath_folder(folder, new_path)
             _new_parent.subfolders[folder.meta.fullname] = folder
             self.src.save_meta()
             return True

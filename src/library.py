@@ -45,12 +45,13 @@ class Source(Struct, frozen=True):
         root_folder = FolderSource(
             Folder(id=ROOT_ID, name="根目录", children=[_void_folder, *self.meta.folders]),
             Path(),
+            self.path,
         )
         void_folder = root_folder / _void_folder
         return root_folder, void_folder
 
 
-class ImageSource(Struct, frozen=True):
+class ImageSource(Struct):
     meta: File
     source: "Path"
     targets: set["Path"] = field(default_factory=set)
@@ -119,9 +120,10 @@ class ImageSource(Struct, frozen=True):
         self.save_meta()
 
 
-class FolderSource(Struct, frozen=True):
+class FolderSource(Struct):
     meta: Folder
     target: "Path"
+    library_path: "Path"
     files: dict[str, "ImageSource"] = field(default_factory=dict)
     subfolders: dict[str, "FolderSource"] = field(default_factory=dict)
 
@@ -132,7 +134,7 @@ class FolderSource(Struct, frozen=True):
         return True
 
     def __truediv__(self, other: Folder):
-        return FolderSource(other, self.target / other.fullname)
+        return FolderSource(other, self.target / other.fullname, self.library_path)
 
     def new_file(self, data: bytes, stem: str, ext: str):
         filename = f"{stem}.{ext}"
@@ -158,7 +160,8 @@ class FolderSource(Struct, frozen=True):
             lastModified=time,
             palettes=[],
         )
-        image = ImageSource(file, self.target, targets={self.target})
+        info_path = self.library_path / "images" / (file.id + ".info")
+        image = ImageSource(file, info_path, targets={self.target / file.fullname})
         self.files[image.meta.fullname] = image
         image.save_data(data)
         return image
@@ -175,4 +178,5 @@ class FolderSource(Struct, frozen=True):
         subfolder = self / folder
         self.subfolders[folder.fullname] = subfolder
         self.meta.modificationTime = time
+        self.meta.children.append(folder)
         return subfolder
