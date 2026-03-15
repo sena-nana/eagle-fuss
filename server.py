@@ -75,6 +75,7 @@ from wsgidav import util
 from wsgidav.wsgidav_app import WsgiDAVApp
 from wsgidav.dav_error import DAVError, HTTP_FORBIDDEN, HTTP_INTERNAL_ERROR
 from wsgidav.dav_provider import DAVCollection, DAVNonCollection, DAVProvider
+from wsgidav.dc.simple_dc import SimpleDomainController
 
 from src.source import EagleLibrarySource
 
@@ -434,13 +435,26 @@ class EagleProvider(DAVProvider):
 # App factory + entry point
 # ---------------------------------------------------------------------------
 
-def make_app(root_path: Path, verbose: int = 1) -> WsgiDAVApp:
-    """Build and return a configured WsgiDAVApp scanning *root_path* for *.library folders."""
+def make_app(root_path: Path, verbose: int = 1,
+             username: str = "eagle", password: str = "eagle") -> WsgiDAVApp:
+    """Build and return a configured WsgiDAVApp scanning *root_path* for *.library folders.
+
+    Authentication uses HTTP Basic Auth with a single fixed account.
+    Credentials default to eagle/eagle and can be overridden via CLI args.
+    """
     config = {
         "provider_mapping": {"/": MultiLibraryProvider(root_path)},
-        # No authentication — suitable for local / trusted-network use
-        "http_authenticator": {"domain_controller": None},
-        "simple_dc": {"user_mapping": {"*": True}},
+        "http_authenticator": {
+            "domain_controller": SimpleDomainController,
+            "accept_basic": True,
+            "accept_digest": False,
+            "default_to_digest": False,
+        },
+        "simple_dc": {
+            "user_mapping": {
+                "*": {username: {"password": password}},
+            }
+        },
         "verbose": verbose,
     }
     return WsgiDAVApp(config)
@@ -457,6 +471,8 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=48000)
     parser.add_argument("--verbose", type=int, default=1)
+    parser.add_argument("--user", default="sena", help="WebDAV username (default: eagle)")
+    parser.add_argument("--password", default="wjxnano02818", help="WebDAV password (default: eagle)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -475,6 +491,6 @@ if __name__ == "__main__":
     for lib in libraries:
         print(f"  /{lib.stem}/")
 
-    app = make_app(root_path, verbose=args.verbose)
+    app = make_app(root_path, verbose=args.verbose, username=args.user, password=args.password)
     print(f"Serving on http://{args.host}:{args.port}/")
     make_server(args.host, args.port, cast(WSGIApplication, app)).serve_forever()
